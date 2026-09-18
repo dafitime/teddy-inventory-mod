@@ -25,3 +25,4 @@ local function LoadFeature(name)
 end
 
 LoadFeature("ConverterTooltips")
+LoadFeature("BuzzBrewTooltip")
