@@ -168,10 +168,12 @@ local function GetItemLabel(converter)
     honeyMax = okHoneyMax and honeyMax or nil
 
     local honeyTag = PlacedItemCache[convKey]
+    local honeyIsFallbackCategory = false
     if honeyTag == nil then
         local ok, whatCanBePlaced = pcall(function() return converter.WhatCanBePlaced end)
         if ok and whatCanBePlaced ~= nil then
             honeyTag = FNameToString(whatCanBePlaced)
+            honeyIsFallbackCategory = true
         end
     end
 
@@ -191,12 +193,14 @@ local function GetItemLabel(converter)
     local fruitName = nil
 
     if honeyAmt > 0 and honeyTag ~= nil and honeyTag ~= "" and honeyTag ~= "None" then
-        -- WhatCanBePlaced on BuzzBrew is a broad acceptance category
-        -- ("FruitAndHoney"), not the specific honey item, whenever the
-        -- specific placement tag wasn't captured this session. Showing
-        -- that raw category humanized ("Fruit And Honey") is confusing -
-        -- just call it "Honey" in that case.
-        local honeyName = (honeyTag == "FruitAndHoney") and "Honey" or DisplayName(honeyTag)
+        -- WhatCanBePlaced on BuzzBrew is a broad acceptance category, not
+        -- the specific honey item, whenever the specific placement tag
+        -- wasn't captured this session (via PlacedItemCache). Whatever
+        -- that fallback tag's exact spelling is, showing it humanized
+        -- ("Fruit And Honey" or similar) is confusing - just call it
+        -- "Honey" any time we're in the fallback path, regardless of the
+        -- tag's exact text.
+        local honeyName = honeyIsFallbackCategory and "Honey" or DisplayName(honeyTag)
         if honeyMax ~= nil and honeyMax > 0 then
             table.insert(parts, string.format("%s %d/%d", honeyName, honeyAmt, honeyMax))
         else
