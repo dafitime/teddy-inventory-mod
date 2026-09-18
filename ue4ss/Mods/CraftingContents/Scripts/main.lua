@@ -42,8 +42,154 @@ end
 local OriginalText = {}
 local PlacedItemCache = {}
 local HookedClasses = {}
-local DisplayNameCache = {}
 local RecipeCache = {}
+
+-- Baked-in tag -> real display name table, harvested from a manual sweep
+-- through every Storage category. Not exhaustive (new items, and anything
+-- not yet seen in Storage, fall back to the humanized tag until learned
+-- live) but covers the bulk of common items on first launch, with no
+-- per-player learning phase needed.
+local DisplayNameCache = {
+    ["Wool_Sheep02"] = "Tan Whisperwool",
+    ["JamGooseberryS"] = "Tigermelon Jam",
+    ["JamCurrant"] = "Nightshade Jam",
+    ["RawGold"] = "Sunglow Ore",
+    ["RawSylvirite"] = "Sylvirite Ore",
+    ["JamGooseberry"] = "Skydrop Jam",
+    ["RawAmber"] = "Honeyglow Shard",
+    ["RefinedDragonBlood"] = "Dragon's Blood Droplet",
+    ["Powder_StegoScale"] = "Radiant Powder",
+    ["FreshBlueberryS"] = "Nightblush Berry",
+    ["RefinedWhy"] = "Chromaflux",
+    ["JamAppleSp"] = "Greenwhistle Apple Jam",
+    ["RawWhy"] = "Outofboundium",
+    ["AriRaptorScale"] = "Brilliant Scale",
+    ["StegoScale"] = "Radiant Scale",
+    ["AetherBlueSky"] = "Blue Sky Aether",
+    ["RawManacite"] = "Manacite Ore",
+    ["JamCurrantS"] = "Velvenight Jam",
+    ["ChickenEgg"] = "Dawnfeather Egg",
+    ["BasicCheese"] = "Wheel of Braun Cheese",
+    ["RawStarshard"] = "Starshard",
+    ["FreshApple"] = "Sunapple",
+    ["Sylvirite"] = "Refined Sylvirite",
+    ["JamRaspberry"] = "Emberberry Jam",
+    ["SeedBag_Cabbage01"] = "Emeraldleaf Seed",
+    ["Gold"] = "Refined Sunglow",
+    ["RawCopper"] = "Amberroot Ore",
+    ["BuzzBrew_FreshBlueberry"] = "Azureberry Buzz",
+    ["JamStrawberry"] = "Ghost Berry Jam",
+    ["RefinedTitanite"] = "Fernbrite Leaf",
+    ["Spun_Sheep04"] = "Brown Whisperthread",
+    ["BuzzBrew_NoMix"] = "Classic Buzz",
+    ["FreshPeachR"] = "Royale Peach",
+    ["FreshAppleSp"] = "Greenwhistle Apple",
+    ["RefinedLunacite"] = "Lunareth",
+    ["Umbracite"] = "Refined Umbracite",
+    ["Powder_Cinderscale"] = "Cinder Powder",
+    ["RawTin"] = "Pebblebrite Ore",
+    ["JamCranberry"] = "Bloodberry Jam",
+    ["RawDragonsBlood"] = "Dragon's Blood Shard",
+    ["Fur_Rabbit01"] = "Wimbletuft",
+    ["RawSilver"] = "Starpebble Ore",
+    ["RawAmethyst"] = "Lavendrite Shard",
+    ["Silver"] = "Refined Starpebble",
+    ["FreshCurrant"] = "Nightshade Berry",
+    ["Wool_Sheep03"] = "Black Whisperwool",
+    ["Sangrylith"] = "Refined Sangrylith",
+    ["RaptorScale"] = "Sorelleon Scale",
+    ["JamBlueberry"] = "Azureberry Jam",
+    ["Fur_Rabbit02"] = "Jaspertuft",
+    ["RefinedAmber"] = "Honeyglow Gem",
+    ["FreshStrawberry"] = "Ghost Berry",
+    ["Manacite"] = "Refined Manacite",
+    ["FreshBlueberry"] = "Azureberry",
+    ["RawTitanite"] = "Fernbrite Shard",
+    ["RawUmbracite"] = "Umbracite Ore",
+    ["FreshCurrantS"] = "Velvenight Berry",
+    ["PotHoney1"] = "Pot of Bumblebuzz Honey",
+    ["Fur_Rabbit03"] = "Mapletuft",
+    ["Wool_Sheep04"] = "Brown Whisperwool",
+    ["RawSangrylith"] = "Sangrylith Ore",
+    ["JamPeachR"] = "Royale Peach Jam",
+    ["Fur_Fox01"] = "Embertuft",
+    ["Wool_Sheep01"] = "White Whisperwool",
+    ["CowsMilk"] = "Eldermilk",
+    ["Spun_Sheep02"] = "Tan Whisperthread",
+    ["FreshStrawberryS"] = "Solberry",
+    ["FreshGooseberry"] = "Skydrop Berry",
+    ["FreshGooseberryS"] = "Tigermelon",
+    ["Fish_Koi_Sp"] = "Mirei Sylphae",
+    ["Axe01"] = "Stonecleaver",
+    ["Tin"] = "Refined Pebblebrite",
+    ["JamBlueberryS"] = "Nightblush Jam",
+    ["FreshCranberryS"] = "Honeycran Berry",
+    ["Stone"] = "Stone",
+    ["Fur_Fox02"] = "Ahriatuft",
+    ["CinderScale"] = "Cinder Scale",
+    ["AetherStarshard"] = "Starshard Aether",
+    ["Spun_Fox02"] = "Ahriathread",
+    ["RefinedBlueSky"] = "Blue Sky Star",
+    ["RawLunacite"] = "Lunacite Shard",
+    ["RawBlueSky"] = "Blue Sky Shard",
+    ["FreshRaspberry"] = "Emberberry",
+    ["Powder_AriRaptorScale"] = "Brilliant Powder",
+    ["JamRaspberryS"] = "Heartgleam Jam",
+    ["FreshRaspberryS"] = "Heartgleam",
+    ["Copper"] = "Refined Amberroot",
+}
+
+-- Temporary harvesting aid: dumps every tag->name pair learned this session
+-- to a file, so a single thorough sweep through every Storage tab can be
+-- turned into a permanent, baked-in lookup table shipped with the mod
+-- (instead of relying on each player re-learning names by browsing Storage
+-- themselves). Resolved relative to this script's own file location, not
+-- the process's working directory.
+local function GetScriptDir()
+    local ok, src = pcall(function() return debug.getinfo(1, "S").source end)
+    if not ok or src == nil then return nil end
+    local path = src:match("^@(.*)$") or src
+    return path:match("^(.*)[/\\][^/\\]*$")
+end
+
+local ScriptDir = GetScriptDir()
+local DisplayNameCacheFilePath = ScriptDir and (ScriptDir .. "/display_names_cache.txt") or "display_names_cache.txt"
+print("[CraftingContents] display name cache path: " .. tostring(DisplayNameCacheFilePath))
+
+local function LoadDisplayNameCache()
+    local ok, f, err = pcall(io.open, DisplayNameCacheFilePath, "r")
+    if not ok or f == nil then
+        print("[CraftingContents] no existing display name cache to load (" .. tostring(err) .. ")")
+        return
+    end
+    local count = 0
+    for line in f:lines() do
+        local tag, name = line:match("^([^\t]*)\t(.*)$")
+        if tag ~= nil and tag ~= "" and name ~= nil then
+            DisplayNameCache[tag] = name
+            count = count + 1
+        end
+    end
+    f:close()
+    print("[CraftingContents] loaded " .. count .. " cached display names")
+end
+
+local function SaveDisplayNameCache()
+    local ok, f, err = pcall(io.open, DisplayNameCacheFilePath, "w")
+    if not ok or f == nil then
+        print("[CraftingContents] failed to save display name cache: " .. tostring(err))
+        return
+    end
+    local count = 0
+    for tag, name in pairs(DisplayNameCache) do
+        f:write(tag .. "\t" .. name .. "\n")
+        count = count + 1
+    end
+    f:close()
+    print("[CraftingContents] saved " .. count .. " display names to cache file")
+end
+
+LoadDisplayNameCache()
 
 -- "FreshBlueberry" -> "Fresh Blueberry" (fallback for tags we can't resolve
 -- to a real display name yet).
@@ -86,6 +232,8 @@ local function ScanStorageWidgets()
     local ok, widgets = pcall(FindAllOf, "W_Storage_Items_C")
     if not ok or widgets == nil then return end
 
+    local learnedAny = false
+
     for _, w in pairs(widgets) do
         if w:IsValid() then
             for _, pair in ipairs(RowPairs) do
@@ -100,6 +248,7 @@ local function ScanStorageWidgets()
                                 local nameStr = TextToString(rowName)
                                 if nameStr ~= nil and nameStr ~= "" then
                                     DisplayNameCache[tagStr] = nameStr
+                                    learnedAny = true
                                     DebugOnce("dispname|" .. tagStr, "Resolved display name: " .. tagStr .. " -> " .. nameStr)
                                 end
                             end
@@ -108,6 +257,10 @@ local function ScanStorageWidgets()
                 end
             end
         end
+    end
+
+    if learnedAny then
+        pcall(SaveDisplayNameCache)
     end
 end
 
@@ -185,15 +338,9 @@ local function GetRecipeInfo(converter, inputTag)
     return recipes[inputTag]
 end
 
-local function TryHookClass(converter)
-    local okClass, classObj = pcall(function() return converter:GetClass() end)
-    if not okClass or classObj == nil then return end
-    local okName, classFullName = pcall(function() return classObj:GetFullName() end)
-    if not okName or classFullName == nil then return end
-    if HookedClasses[classFullName] then return end
-    HookedClasses[classFullName] = true
-
-    local assetPath = classFullName:gsub("^%a+ ", "")
+local function RegisterHooksForAssetPath(assetPath)
+    if HookedClasses[assetPath] then return end
+    HookedClasses[assetPath] = true
 
     pcall(function()
         RegisterHook(assetPath .. ":HandlePlaceItem", function(Context, ComplexDataTable)
@@ -208,6 +355,50 @@ local function TryHookClass(converter)
             HandleTagCaptured(okSelf and selfObj or nil, ItemPlacedAdvance, "HandleReloadSave")
         end)
     end)
+end
+
+-- HandleReloadSave is meant to tell us which specific item is ALREADY in a
+-- station at save-load time - but that only works if the hook is registered
+-- before it fires. The old approach only registered hooks once a LIVE
+-- instance of a class was found via FindAllOf, inside the polling loop -
+-- which only starts ticking after the whole script finishes loading. If
+-- HandleReloadSave fires during level load (very likely, since it's a
+-- reload-time event), we'd miss it forever for every station that already
+-- had something placed, and permanently fall back to the generic category
+-- ("Fruit x12" instead of the real item). So every known converter class is
+-- hooked immediately here, at script load time, before the game has had any
+-- chance to fire these events - not deferred until we happen to see a live
+-- instance. TryHookClass (used in the polling loop below) still exists as a
+-- fallback for any converter class not in this list, in case the dev adds a
+-- new one - it just won't catch that specific class's reload-save event on
+-- THIS boot, only from the next one after it's added here.
+local KNOWN_CONVERTER_CLASS_NAMES = {
+    "BP_Converter_Base",
+    "BP_Converter_Furnace",
+    "BP_Converter_Jammer",
+    "BP_Converter_Cheese",
+    "BP_Converter_Crusher",
+    "BP_Converter_Crystal",
+    "BP_Converter_Crystal_Infusion",
+    "BP_Converter_BuzzBrew",
+    "BP_Converter_Yarn",
+    "BP_Converter_Farming",
+    "BP_Converter_Farming_01",
+    "BP_Converter_Farming_05",
+}
+
+for _, className in ipairs(KNOWN_CONVERTER_CLASS_NAMES) do
+    RegisterHooksForAssetPath("/Game/Interactive/Shop/Production/" .. className .. "." .. className .. "_C")
+end
+
+local function TryHookClass(converter)
+    local okClass, classObj = pcall(function() return converter:GetClass() end)
+    if not okClass or classObj == nil then return end
+    local okName, classFullName = pcall(function() return classObj:GetFullName() end)
+    if not okName or classFullName == nil then return end
+
+    local assetPath = classFullName:gsub("^%a+ ", "")
+    RegisterHooksForAssetPath(assetPath)
 end
 
 local function GetItemLabel(converter)
