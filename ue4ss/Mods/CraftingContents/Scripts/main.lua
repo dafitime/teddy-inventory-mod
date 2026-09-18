@@ -312,17 +312,27 @@ local function UpdateConverter(converter)
 end
 
 LoopAsync(20, function()
-    pcall(ScanStorageWidgets)
+    -- Top-level safety net: if ANYTHING below throws uncaught, UE4SS stops
+    -- rescheduling this loop entirely - a single bad/stale object reference
+    -- (e.g. an actor mid-destruction during a map/day transition) would
+    -- silently kill the mod for good until the next reload. Every call was
+    -- already pcall-wrapped individually except converter:IsValid() itself -
+    -- wrapping the whole tick is a second layer of defense against that
+    -- ever happening again from something we haven't hit yet.
+    pcall(function()
+        pcall(ScanStorageWidgets)
 
-    local ok, converters = pcall(FindAllOf, "BP_Converter_Base_C")
-    if ok and converters ~= nil then
-        for _, converter in pairs(converters) do
-            if converter:IsValid() then
-                pcall(TryHookClass, converter)
-                pcall(BuildRecipeCache, converter)
-                pcall(UpdateConverter, converter)
+        local ok, converters = pcall(FindAllOf, "BP_Converter_Base_C")
+        if ok and converters ~= nil then
+            for _, converter in pairs(converters) do
+                local okValid, isValid = pcall(function() return converter:IsValid() end)
+                if okValid and isValid then
+                    pcall(TryHookClass, converter)
+                    pcall(BuildRecipeCache, converter)
+                    pcall(UpdateConverter, converter)
+                end
             end
         end
-    end
+    end)
     return false
 end)
